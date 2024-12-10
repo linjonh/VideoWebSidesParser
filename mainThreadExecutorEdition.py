@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from ctypes import WinError
 import time
 from urllib import error, request
@@ -7,9 +8,12 @@ from bs4 import BeautifulSoup
 import json as Json
 
 BaseURL = "https://www.xiangguys.com"
+loadMainExector = ThreadPoolExecutor(max_workers=12)
+# datalPlayExector=ThreadPoolExecutor(max_workers=12)
+# playurlExetor=ThreadPoolExecutor(max_workers=12)
 
 
-async def loadMain():
+def loadMain():
     # 首页
     # 获取导航栏地址
     soup = getSoup()
@@ -25,16 +29,20 @@ async def loadMain():
             allNaviHref.append(a)
             print("href=" + a)
     print(allNaviHref)
-    arr = [parsePerpage(tab) for tab in allNaviHref[1:2]]
-    allVideoItems = await asyncio.gather(*arr)
+    futures = [
+        loadMainExector.submit(parsePerpage(tab), f"Task-{tab}") for tab in allNaviHref
+    ]
+    allPlayUrls = []
+    for future in futures:
+        allPlayUrls.append(future.result)
     file = open("G:\\videoInfo.ini", "+w", encoding="utf-8")
 
-    for i in range(0, len(allVideoItems)):
+    for i in range(0, len(allNaviHref)):
         tab = allNaviHref[i]
-        tabVideItems = allVideoItems[i]
+        tabM3u8Arrays = allPlayUrls[i]
         file.write(f"#{tab}\n")
-        for video in tabVideItems:
-            file.write(f"{video.__dict__}\n")
+        for m3u8 in tabM3u8Arrays:
+            file.write(f"{m3u8}\n")
     file.close()
     # print(f"parse end! allPlayUrls={allPlayUrls}")
     print(f"parse end! ")
@@ -44,6 +52,7 @@ async def loadMain():
 def getSoup(url=BaseURL):
     try:
         start = time.time()
+
         header = {
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
         }
@@ -62,6 +71,7 @@ def getSoup(url=BaseURL):
     except WinError as e:
         print(e)
         soup = retryGetSoup(url)
+
     return soup
 
 
@@ -75,17 +85,14 @@ def retryGetSoup(url):
 
 
 class VideoItemInfo:
-    def __init__(self, tab,detailPageUrl ,title, imageUrl, m3u8="",actors=""):
-        self.tab = tab
+    def __init__(self, detailPageUrl, title, imageUrl, actors):
         self.detailPageUrl = detailPageUrl
         self.title = title
         self.imageUrl = imageUrl
-        self.m3u8 = m3u8
         self.actors = actors
-        
 
 
-async def parsePerpage(pageSeg, isNeedParsePageTag=True):
+def parsePerpage(pageSeg, isNeedParsePageTag=True):
     # 切页解析
     # 获取分页信息和itemData
     url = BaseURL + pageSeg
@@ -95,6 +102,7 @@ async def parsePerpage(pageSeg, isNeedParsePageTag=True):
     listPageItem = pageSoup.select(".page-link")  # page nav
     pageNavis = []
     videoItems = []
+    allPlayUrls = []
     if isNeedParsePageTag:
         # page item parse
         if len(listPageItem) > 0:
@@ -106,73 +114,70 @@ async def parsePerpage(pageSeg, isNeedParsePageTag=True):
             print(subStr)
             count = subStr.replace("hjs", "").replace(".html", "")
             print(f"page count={count}")
-            for i in range(2, int(count)):
+            for i in range(1, int(count)):
                 pageNavis.append(f"{subStrPre}hjs{i}.html")
                 # print(el.prettify())
-            print(f"pageNavis={pageNavis[-1:]}")
+            print(f"pageNavis={pageNavis}")
     # vide item parse
-    for el in listVideo[:3]:
+    for el in listVideo:
         videoTag = el.select_one(".thumbnail")
 
         linkDetalPageUrl = videoTag.attrs["href"]  # 详情页地址
         title = videoTag.attrs["title"]  # 视频标题
         imageUrl = el.select_one("img").attrs["data-original"]  # 预览图
-        # actorsArray = el.select_one("p").stripped_strings  # 演员表
-        # actors = ""
-        # for s in actorsArray:
-        #     actors += s + " | "
-        item = VideoItemInfo(pageSeg, linkDetalPageUrl,title, imageUrl)
+        actorsArray = el.select_one("p").stripped_strings  # 演员表
+        actors = ""
+        for s in actorsArray:
+            actors += s + ","
+        item = VideoItemInfo(linkDetalPageUrl, title, imageUrl, actors)
         # print(
         #     f"title={title} linkDetalPageUrl={linkDetalPageUrl} imageUrl={imageUrl} actorsArray={actors}"
         # )
         # print(item.__dict__)
         videoItems.append(item)
     # start to visit videoDetail:
-    data = await asyncio.gather(
-        *(videoDetail(item.detailPageUrl) for item in videoItems[:3])
-    )
-    print(type(data))
-    detailInfo=""
-    for (link,infos) in data:
-        for i in infos:
-            detailInfo=detailInfo+" | "+i 
-    print(f"pageSeg={pageSeg} datalPlaySize={len(data)}")
+    futures = [
+        loadMainExector.submit(videoDetail(item.detailPageUrl), f"Task-{item.title}")
+        for item in videoItems
+    ]
+    # print(visitDetailPageTasks.__dict__)
+    datalPlayPages = []
+    for future in futures:
+        datalPlayPages.append(future.result)
+
+    print(f"pageSeg={pageSeg} datas={datalPlayPages}")
     # start visit play page
-    playUrls = await asyncio.gather(*(playVideoPage(link) for (link,infos) in data))
-    for i in range(0, len(playUrls)):
-        item = videoItems[i]
-        item.m3u8 = playUrls[i]
-        item.actors=detailInfo
-    print(f"pageSeg={pageSeg} playUrls.size={len(playUrls)}")
+    futures = [
+        loadMainExector.submit(playVideoPage(link), f"Task-{item.title}")
+        for link in datalPlayPages
+    ]
+    playUrls = []
+    for future in futures:
+        playUrls.append(future.result)
+    print(f"pageSeg={pageSeg} playUrls={playUrls}")
+    allPlayUrls.extend(playUrls)
     #   todo
     if len(pageNavis) > 0:
-        for page in pageNavis[:2]:
+        for page in pageNavis:
             print(f"start parse next page:{page}")
-            nextPageItems = await parsePerpage(page, False)
-            videoItems.extend(nextPageItems)
-            print(
-                f"next page videoSize={len(nextPageItems)} allAddedSize={len(videoItems)}"
-            )
-
-    return videoItems
+            parsePerpage(page, False)
+    return allPlayUrls
 
 
-async def videoDetail(pageSeg):
+def videoDetail(pageSeg):
     # 获取到视频播放页地址
 
     url = BaseURL + pageSeg
     pageSoup = getSoup(url=url)
     #  print(pageSoup.prettify())
     detailPlay = pageSoup.select_one(".detail-play-list a")  # 播放高清视频按钮地址
-    detailInfos = pageSoup.select_one(".detail-actor").stripped_strings  # 详情
-    
     # print(detailPlay.prettify())
     linkUrl = detailPlay.attrs["href"]  # playVideoPage url address
     print(f"videoDetail={linkUrl}")
-    return (linkUrl,detailInfos)
+    return linkUrl
 
 
-async def playVideoPage(pageSeg):
+def playVideoPage(pageSeg):
     url = BaseURL + pageSeg
     pageSoup = getSoup(url=url)
     el = pageSoup.select_one(".player script")
@@ -191,7 +196,8 @@ if __name__ == "__main__":
     start = time.time()
     asyncio.run(loadMain())
     end = time.time()
-    print(f"run duration time={end-start}")
+    duration = end - start
+    print(f"run duration time={duration}s , minus={duration/60}")
     # parsePerpage("/xiju/hjs1.html")
     # videoDetail("/video/3330.html")
     # playVideoPage("/video/play/3330-1-1.html")
