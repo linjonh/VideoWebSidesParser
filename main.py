@@ -1,6 +1,7 @@
 import asyncio
 
 # from ctypes import WinError
+import os
 import threading
 import time
 from urllib import error, request
@@ -13,6 +14,7 @@ from MyLog import log
 BaseURL = "https://www.xiangguys.com"
 counterLock=threading.Lock()
 countNum=0
+dataFileDir="data"
 def slice(array, isNeedSlice=False):
     if isNeedSlice:
         return array[:3]
@@ -96,6 +98,7 @@ async def loadMain():
     ]
     allVideoItems: list[list[VideoItemInfo]] = await asyncio.gather(*arr)
 
+    os.makedirs(dataFileDir,exist_ok=True)
     await asyncio.gather(
         saveToJsonFile(allNaviHref, allVideoItems),
         saveToM3u8(allNaviHref, allVideoItems),
@@ -106,9 +109,10 @@ async def loadMain():
 
 
 async def saveToJsonFile(allNaviHref, allVideoItems):
+    json=""
     log("srart saveToJsonFile ")
     try:
-        file = open("./data/videoInfo.json", "+w", encoding="utf-8")
+        file = open(f"{dataFileDir}/videoInfo.json", "+w", encoding="utf-8")
 
         json: str = "{"
 
@@ -142,7 +146,7 @@ async def saveToM3u8(allNaviHref, allVideoItems):
             tab = allNaviHref[i].replace("/", "")
             if tab == "":
                 tab = "home"
-            fileName = f"./data/{tab}.m3u8"
+            fileName = f"{dataFileDir}/{tab}.m3u8"
             log(fileName)
             file = open(fileName, "+w", encoding="utf-8")
             file.write("#EXTM3U\n")
