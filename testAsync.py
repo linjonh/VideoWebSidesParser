@@ -13,4 +13,8 @@ async def printStr(testStr):
 # asyncio.run(test())
 
 x=1338 /60
-print(x)
+print(f"{x:.2f}")
+
+x=[1,2,3]
+print(x[:-1])
+

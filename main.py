@@ -1,5 +1,6 @@
 import asyncio
-from ctypes import WinError
+
+# from ctypes import WinError
 import time
 from urllib import error, request
 
@@ -9,36 +10,11 @@ import json as Json
 BaseURL = "https://www.xiangguys.com"
 
 
-async def loadMain():
-    # 首页
-    # 获取导航栏地址
-    soup = getSoup()
-    allText = soup.select(".navbar a")
-    allNaviHref = []
-    for i in allText:
-        # for s in i.stripped_strings:
-        #     print(s)
-
-        # print(i.prettify())
-        a = i.attrs["href"]
-        if a != "":
-            allNaviHref.append(a)
-            print("href=" + a)
-    print(allNaviHref)
-    arr = [parsePerpage(tab) for tab in allNaviHref[1:2]]
-    allVideoItems = await asyncio.gather(*arr)
-    file = open("G:\\videoInfo.ini", "+w", encoding="utf-8")
-
-    for i in range(0, len(allVideoItems)):
-        tab = allNaviHref[i]
-        tabVideItems = allVideoItems[i]
-        file.write(f"#{tab}\n")
-        for video in tabVideItems:
-            file.write(f"{video.__dict__}\n")
-    file.close()
-    # print(f"parse end! allPlayUrls={allPlayUrls}")
-    print(f"parse end! ")
-    return
+def slice(array, isNeedSlice=False):
+    if isNeedSlice:
+        return array[1:2]
+    else:
+        return array
 
 
 def getSoup(url=BaseURL):
@@ -56,10 +32,7 @@ def getSoup(url=BaseURL):
         end = time.time()
         duration = end - start
         print(f"load time={duration}")
-    except error.URLError as e:
-        print(e)
-        soup = retryGetSoup(url)
-    except WinError as e:
+    except Exception as e:
         print(e)
         soup = retryGetSoup(url)
     return soup
@@ -69,20 +42,97 @@ def retryGetSoup(url):
     try:
         print(f"retry load url={url}")
         soup = getSoup(url)
-    except error.URLError as e:
+    except Exception as e:
         print(e)
     return soup
 
 
 class VideoItemInfo:
-    def __init__(self, tab,detailPageUrl ,title, imageUrl, m3u8="",actors=""):
+    def __init__(self, tab, detailPageUrl, title, imageUrl, m3u8="", actors=""):
         self.tab = tab
         self.detailPageUrl = detailPageUrl
         self.title = title
         self.imageUrl = imageUrl
         self.m3u8 = m3u8
         self.actors = actors
-        
+
+
+async def loadMain():
+    # 首页
+    # 获取导航栏地址
+    soup = getSoup()
+    allText = soup.select(".navbar a")
+    allNaviHref: list[str] = []
+    for i in allText:
+        # for s in i.stripped_strings:
+        #     print(s)
+
+        # print(i.prettify())
+        a = i.attrs["href"]
+        if a != "":
+            allNaviHref.append(a)
+            print("href=" + a)
+    print(allNaviHref)
+    arr: list[list[list[VideoItemInfo]]] = [
+        parsePerpage(tab) for tab in slice(allNaviHref)
+    ]
+    allVideoItems: list[list[VideoItemInfo]] = await asyncio.gather(*arr)
+
+    await asyncio.gather(saveToJsonFile(), saveToM3u8(allNaviHref, allVideoItems))
+    # print(f"parse end! allPlayUrls={allPlayUrls}")
+    print(f"parse end! ")
+    return
+
+
+async def saveToJsonFile(allNaviHref, allVideoItems):
+    try:
+        file = open("./videoInfo.ini", "+w", encoding="utf-8")
+
+        json: str = "{{"
+
+        for i in range(0, len(allVideoItems)):
+            tab = allNaviHref[i]
+            if tab == "":
+                tab = "home"
+            tabVideItems: list[list[VideoItemInfo]] = allVideoItems[i]
+            json += f' "{tab}"=['
+            for video in tabVideItems:
+                json += f' {{ "title"="{video.title}","imageUrl"="{video.imageUrl}","m3u8\="{video.m3u8}","actors"="{video.actors}" }} ,'
+
+            json = json[:-1] + "]"
+        json += "}}"
+        pretifyed = Json.dumps(json, indent=4)
+        file.write(pretifyed)
+        file.close()
+    except Exception as e:
+        print(e)
+        return False
+    return True
+
+
+async def saveToM3u8(allNaviHref, allVideoItems):
+    try:
+        for i in range(0, len(allVideoItems)):
+            tab = allNaviHref[i].replace("/", "")
+            if tab == "":
+                tab = "home"
+            fileName = f"./{tab}.m3u8"
+            print(fileName)
+            file = open(fileName, "+w", encoding="utf-8")
+            file.write("#EXTM3U\n")
+
+            tabVideItems = allVideoItems[i]
+            for video in tabVideItems:
+                logo = video.imageUrl
+                file.write(
+                    f'#EXTINF:-1 group-title="{tab}" tvg-logo="{logo}",{video.title}\n'
+                )
+                file.write(f"{video.m3u8}\n")
+            file.close()
+    except Exception as e:
+        print(e)
+        return False
+    return True
 
 
 async def parsePerpage(pageSeg, isNeedParsePageTag=True):
@@ -111,7 +161,7 @@ async def parsePerpage(pageSeg, isNeedParsePageTag=True):
                 # print(el.prettify())
             print(f"pageNavis={pageNavis[-1:]}")
     # vide item parse
-    for el in listVideo[:3]:
+    for el in slice(listVideo):
         videoTag = el.select_one(".thumbnail")
 
         linkDetalPageUrl = videoTag.attrs["href"]  # 详情页地址
@@ -121,28 +171,25 @@ async def parsePerpage(pageSeg, isNeedParsePageTag=True):
         # actors = ""
         # for s in actorsArray:
         #     actors += s + " | "
-        item = VideoItemInfo(pageSeg, linkDetalPageUrl,title, imageUrl)
+        item = VideoItemInfo(pageSeg, linkDetalPageUrl, title, imageUrl)
         # print(
         #     f"title={title} linkDetalPageUrl={linkDetalPageUrl} imageUrl={imageUrl} actorsArray={actors}"
         # )
         # print(item.__dict__)
         videoItems.append(item)
     # start to visit videoDetail:
-    data = await asyncio.gather(
-        *(videoDetail(item.detailPageUrl) for item in videoItems[:3])
-    )
-    print(type(data))
-    detailInfo=""
-    for (link,infos) in data:
+    data = await asyncio.gather(*(videoDetail(item) for item in slice(videoItems)))
+    detailInfo = ""
+    for link, infos in data:
         for i in infos:
-            detailInfo=detailInfo+" | "+i 
+            detailInfo = detailInfo + " | " + i
     print(f"pageSeg={pageSeg} datalPlaySize={len(data)}")
     # start visit play page
-    playUrls = await asyncio.gather(*(playVideoPage(link) for (link,infos) in data))
+    playUrls = await asyncio.gather(*(playVideoPage(link) for (link, infos) in data))
     for i in range(0, len(playUrls)):
         item = videoItems[i]
         item.m3u8 = playUrls[i]
-        item.actors=detailInfo
+        item.actors = detailInfo
     print(f"pageSeg={pageSeg} playUrls.size={len(playUrls)}")
     #   todo
     if len(pageNavis) > 0:
@@ -157,19 +204,19 @@ async def parsePerpage(pageSeg, isNeedParsePageTag=True):
     return videoItems
 
 
-async def videoDetail(pageSeg):
+async def videoDetail(item: VideoItemInfo):
     # 获取到视频播放页地址
-
+    pageSeg = item.detailPageUrl
     url = BaseURL + pageSeg
     pageSoup = getSoup(url=url)
     #  print(pageSoup.prettify())
     detailPlay = pageSoup.select_one(".detail-play-list a")  # 播放高清视频按钮地址
     detailInfos = pageSoup.select_one(".detail-actor").stripped_strings  # 详情
-    
+
     # print(detailPlay.prettify())
     linkUrl = detailPlay.attrs["href"]  # playVideoPage url address
-    print(f"videoDetail={linkUrl}")
-    return (linkUrl,detailInfos)
+    print(f"tab={item.tab} videoDetail={linkUrl}")
+    return (linkUrl, detailInfos)
 
 
 async def playVideoPage(pageSeg):
@@ -191,7 +238,7 @@ if __name__ == "__main__":
     start = time.time()
     asyncio.run(loadMain())
     end = time.time()
-    print(f"run duration time={end-start}")
+    print(f"run duration time={(end-start):.2f}")
     # parsePerpage("/xiju/hjs1.html")
     # videoDetail("/video/3330.html")
     # playVideoPage("/video/play/3330-1-1.html")
