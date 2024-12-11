@@ -39,7 +39,7 @@ def log(msg, level=logging.INFO, frameIndex=1):
     statcks2 = inspect.stack()
     frame = statcks2.pop(frameIndex)
     name = frame.filename.split("\\").pop(-1)
-    callStack = f" <===loged on [{name[name.rindex("/")+1:]}${frame.function}:({frame.lineno})]"
+    callStack = f" <===[{name[name.rindex("/")+1:]}${frame.function}:({frame.lineno})]"
 
     # print(callStack)
     # frame.filename
