@@ -1,4 +1,3 @@
-
 import inspect
 import logging
 import threading
@@ -11,15 +10,17 @@ _isConfigLog = False
 def initLog():
     # logging.getLogger("myLogger")
     console_handler = logging.StreamHandler()
-    log_handler = logging.FileHandler("app.log",encoding='utf-8')
+    log_handler = logging.FileHandler("app.log", encoding="utf-8")
     console_handler.setLevel(logging.DEBUG)
     log_handler.setLevel(logging.DEBUG)
-    logging.basicConfig(level=logging.DEBUG,
-                        format="[%(asctime)s-%(levelname)s]: %(message)s",
-                        datefmt="%Y-%m-%d_%H:%M:%S",
-                        handlers=[console_handler, log_handler]
-                        )
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="[%(asctime)s-%(levelname)s]: %(message)s",
+        datefmt="%Y-%m-%d_%H:%M:%S",
+        handlers=[console_handler, log_handler],
+    )
     return
+
 
 @staticmethod
 def logE(msg):
@@ -27,7 +28,7 @@ def logE(msg):
 
 
 @staticmethod
-def log(msg, level=logging.INFO,frameIndex=1):
+def log(msg, level=logging.INFO, frameIndex=1):
     global _isConfigLog
     if not _isConfigLog:
         initLog()
@@ -38,13 +39,18 @@ def log(msg, level=logging.INFO,frameIndex=1):
     statcks2 = inspect.stack()
     frame = statcks2.pop(frameIndex)
     name = frame.filename.split("\\").pop(-1)
-    callStack = f" <===loged on [{name}${frame.function}:({frame.lineno})]"
+    callStack = f" <===loged on [{name[name.rindex("/")+1:]}${frame.function}:({frame.lineno})]"
 
     # print(callStack)
     # frame.filename
     # stc = stacks[-2:]
     # for s in stc:
     #     print("=="+s)
+    if isinstance(msg, Exception) or isinstance(msg, str) == False:
+        if isinstance(msg, Exception):
+            print(f"-------{msg}")
+        msg = repr(msg)
+
 
     callStack = msg + callStack
 
