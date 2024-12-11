@@ -39,7 +39,18 @@ def log(msg, level=logging.INFO, frameIndex=1):
     statcks2 = inspect.stack()
     frame = statcks2.pop(frameIndex)
     name = frame.filename.split("\\").pop(-1)
-    callStack = f" <===[{name[name.rindex("/")+1:]}${frame.function}:({frame.lineno})]"
+    r = 0
+    try:
+        r = name.rindex("/")
+        r += 1
+    except Exception:
+        try:
+            r = name.rindex("\\")
+            r += 1
+        except Exception:
+            pass
+
+    callStack = f" <===[{name[r:]}${frame.function}:({frame.lineno})]"
 
     # print(callStack)
     # frame.filename
@@ -50,7 +61,6 @@ def log(msg, level=logging.INFO, frameIndex=1):
         if isinstance(msg, Exception):
             print(f"-------{msg}")
         msg = repr(msg)
-
 
     callStack = msg + callStack
 
